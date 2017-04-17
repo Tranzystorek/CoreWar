@@ -34,8 +34,20 @@ private:
 
 	using ProcessQueue = std::queue<Core::ProgramPtr>;
 
+public:
+
+	VirtualMachine(unsigned int);
+
+	void executeInstruction(ProcessQueue&);
+
+private:
+
+	int convertValue(int);
+
 	ProcessQueue p1_;
 	ProcessQueue p2_;
+
+	Core core_;
 };
 
 //******************************************************************************
@@ -44,11 +56,28 @@ private:
 
 struct VirtualMachine::Core::Instruction
 {
-	enum OpCode {KIL, FRK, MOV, ADD, SUB, MUL, DIV};
+	enum OpCode : unsigned char {KIL, FRK, NOP, MOV, ADD, SUB, MUL, DIV, MOD,
+								 JMP};
+	enum Modifier : unsigned char {A, B, AB, BA, F, X, I};
+	enum AddressMode : unsigned char {IMM, DIR, AIN, BIN};
 
-	Instruction(OpCode o = KIL) : op(o) {}
+	Instruction(OpCode o = KIL, Modifier m = F,
+				int a = 0, int b = 0,
+				AddressMode am = DIR, AddressMode bm = DIR)
+
+				: 	op(o), mod(m),
+					aMode(am), aVal(a),
+					bMode(bm), bVal(b) {}
 
 	OpCode op;
+
+	Modifier mod;
+
+	AddressMode aMode;
+	int aVal;
+
+	AddressMode bMode;
+	int bVal;
 };
 
 //******************************************************************************
@@ -60,19 +89,25 @@ class VirtualMachine::Core::ProgramPtr
 public:
 
 	explicit ProgramPtr(Core::Instruction* p, const Core& r) : ptr_(p),
-															   ref_(r) {}
+															   ref_(const_cast<Core&>(r)) {}
+
+	ProgramPtr& operator=(const ProgramPtr&);
 
 	Core::Instruction& operator*();
+	Core::Instruction* operator->();
+
+	ProgramPtr operator+(int);
 
 	ProgramPtr& operator+=(int);
 
 	ProgramPtr& operator++();
+	ProgramPtr operator++(int);
 
 private:
 
 	Core::Instruction* ptr_;
 
-	const Core& ref_;
+	Core& ref_;
 };
 
 #endif //VIRTUALMACHINE_HPP
