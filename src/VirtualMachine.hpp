@@ -74,10 +74,10 @@ struct VirtualMachine::Core::Instruction
 	Modifier mod;
 
 	AddressMode aMode;
-	int aVal;
+	unsigned int aVal;
 
 	AddressMode bMode;
-	int bVal;
+	unsigned int bVal;
 };
 
 //******************************************************************************
@@ -96,9 +96,9 @@ public:
 	Core::Instruction& operator*();
 	Core::Instruction* operator->();
 
-	ProgramPtr operator+(int);
+	ProgramPtr operator+(unsigned int);
 
-	ProgramPtr& operator+=(int);
+	ProgramPtr& operator+=(unsigned int);
 
 	ProgramPtr& operator++();
 	ProgramPtr operator++(int);

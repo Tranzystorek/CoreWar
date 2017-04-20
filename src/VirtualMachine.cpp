@@ -24,8 +24,8 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 	ProgramPtr p = proc.front();
 	proc.pop();
 
-	ProgramPtr pd = p;
 	ProgramPtr ps = p;
+	ProgramPtr pd = p;
 
 	//instruction "registers"
 	Instruction current = *p;
@@ -35,7 +35,6 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 	switch(current.aMode)
 	{
 		case AddressMode::IMM:
-			ps = p;
 			break;
 
 		case AddressMode::DIR:
@@ -63,7 +62,6 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 	switch(current.bMode)
 	{
 		case AddressMode::IMM:
-			pd = p;
 			break;
 
 		case AddressMode::DIR:
@@ -87,6 +85,7 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 
 	dst = *pd;
 
+	//execute current instruction
 	switch(current.op)
 	{
 		case OpCode::KIL:
@@ -174,30 +173,30 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 			switch(current.mod)
 			{
 				case Modifier::A:
-					pd->aVal = (dst.aVal - src.aVal) + core_.size_;
+					pd->aVal = (core_.size_ + dst.aVal - src.aVal) % core_.size_;
 					break;
 
 				case Modifier::B:
-					pd->bVal = (dst.bVal - src.bVal) + core_.size_;
+					pd->bVal = (core_.size_ + dst.bVal - src.bVal) % core_.size_;
 					break;
 
 				case Modifier::AB:
-					pd->bVal = (dst.bVal - src.aVal) + core_.size_;
+					pd->bVal = (core_.size_ + dst.bVal - src.aVal) % core_.size_;
 					break;
 
 				case Modifier::BA:
-					pd->aVal = (dst.aVal - src.bVal) + core_.size_;
+					pd->aVal = (core_.size_ + dst.aVal - src.bVal) % core_.size_;
 					break;
 
 				case Modifier::X:
-					pd->aVal = (dst.aVal - src.bVal) + core_.size_;
-					pd->bVal = (dst.bVal - src.aVal) + core_.size_;
+					pd->aVal = (core_.size_ + dst.aVal - src.bVal) % core_.size_;
+					pd->bVal = (core_.size_ + dst.bVal - src.aVal) % core_.size_;
 					break;
 
 				case Modifier::F:
 				case Modifier::I:
-					pd->aVal = (dst.aVal - src.aVal) + core_.size_;
-					pd->bVal = (dst.bVal - src.bVal) + core_.size_;
+					pd->aVal = (core_.size_ + dst.aVal - src.aVal) % core_.size_;
+					pd->bVal = (core_.size_ + dst.bVal - src.bVal) % core_.size_;
 					break;
 			}
 			proc.push(++p);
@@ -420,7 +419,7 @@ Instruction* ProgramPtr::operator->()
 	return ptr_;
 }
 
-ProgramPtr ProgramPtr::operator+(int n)
+ProgramPtr ProgramPtr::operator+(unsigned int n)
 {
 	ProgramPtr result = *this;
 
@@ -429,17 +428,11 @@ ProgramPtr ProgramPtr::operator+(int n)
 	return result;
 }
 
-ProgramPtr& ProgramPtr::operator+=(int n)
+ProgramPtr& ProgramPtr::operator+=(unsigned int n)
 {
 	std::ptrdiff_t d = ptr_ - ref_.memory_;
 
-	d += n;
-
-	if(d < 0)
-		d = ref_.size_ - (-d) % ref_.size_;
-
-	else
-		d %= ref_.size_;
+	d = (d + n) % ref_.size_;
 
 	ptr_ = ref_.memory_ + d;
 
