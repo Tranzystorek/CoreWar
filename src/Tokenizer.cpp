@@ -1,48 +1,105 @@
 #include "Tokenizer.hpp"
 
+#include <algorithm>
 #include <cctype>
 
 Tokenizer::Tokenizer(const std::string& s,
 					 const char* dropped,
 					 const char* kept = "",
 					 bool lcase = false)
-					 : sep_(dropped, kept),
+					 : index_(0),
+					   dropped_(dropped),
+					   kept_(kept),
 					   forceLowercase_(lcase),
-					   t_(std::string())
+					   processed_(false)
 {
 	if(forceLowercase_)
-		t_ = boost::tokenizer< boost::char_separator<char> >(toLCase(s), sep_);
+		text_ = toLCase(s);
 
 	else
-		t_ = boost::tokenizer< boost::char_separator<char> >(s, sep_);
+		text_ = s;
 
-	reset();
+	strit_ = text_.cbegin();
 }
 
 void Tokenizer::assign(const std::string& s)
 {
 	if(forceLowercase_)
-		t_.assign(toLCase(s));
+		text_ = toLCase(s);
 
 	else
-		t_.assign(s);
+		text_ = s;
 
-	reset();
+	strit_ = text_.cbegin();
+
+	tokens_.clear();
+	index_ = 0;
+
+	processed_ = false;
 }
 
 std::string Tokenizer::next()
 {
-	return *(it_++);
+	if(!processed_)
+		nextToken();
+
+	return tokens_.at(index_++);
 }
 
 bool Tokenizer::isToken()
 {
-	return it_ != t_.end();
+	return (( !processed_ ) || ( index_ != tokens_.size() ));
 }
 
-void Tokenizer::reset()
+void Tokenizer::nextToken()
 {
-	it_ = t_.begin();
+	std::string tok;
+
+	std::string::iterator it;
+
+	bool found = false;
+	bool inserted = false;
+
+	while(strit_ != text_.cend())
+	{
+		it = std::find(dropped_.begin(), dropped_.end(), *strit_);
+
+		if( it != dropped_.end() )
+		{
+			++strit_;
+
+			if(!found)
+				continue;
+
+			//tokens_.push_back(tok);
+			break;
+		}
+
+		it = std::find(kept_.begin(), kept_.end(), *strit_);
+
+		if( it != kept_.end() )
+		{
+			if(!found)
+			{
+				tokens_.push_back(std::string() + *(strit_++));
+				continue;
+			}
+
+			tokens_.push_back(tok);
+			tokens_.push_back(std::string() + *(strit_++));
+			inserted = true;
+			break;
+		}
+
+		found = true;
+		tok += *(strit_++);
+	}//while
+
+	if(found && !inserted)
+		tokens_.push_back(tok);
+
+	if(strit_ == text_.cend())
+		processed_ = true;
 }
 
 std::string Tokenizer::toLCase(const std::string& s)
