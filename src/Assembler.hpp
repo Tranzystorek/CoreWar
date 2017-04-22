@@ -1,6 +1,8 @@
 #ifndef ASSEMBLER_HPP
 #define ASSEMBLER_HPP
 
+#include "VirtualMachine.hpp"
+
 #include <unordered_map>
 
 #include <fstream>
@@ -21,12 +23,16 @@ public:
 
 private:
 
+	using Instruction = VirtualMachine::Core::Instruction;
+
 	Assembler();
 
 	Assembler(const Assembler&) = delete;
 	Assembler& operator=(const Assembler&) = delete;
 
-	void readLabels();
+	std::vector<std::string> readLabels();
+
+	std::vector<Instruction> readInstructions(std::vector<std::string>);
 
 	void resetFilePos();
 
