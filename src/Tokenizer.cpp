@@ -48,7 +48,31 @@ std::string Tokenizer::next()
 
 bool Tokenizer::isToken()
 {
+	if( !processed_ && index_ == tokens_.size() )
+		return checkToken();
+
 	return (( !processed_ ) || ( index_ != tokens_.size() ));
+}
+
+bool Tokenizer::checkToken()
+{
+	std::string::const_iterator it = strit_;
+
+	while(it != text_.cend())
+	{
+		std::string::iterator fit = std::find(dropped_.begin(), dropped_.end(), *it);
+
+		if(fit != dropped_.end())
+		{
+			++it;
+
+			continue;
+		}
+
+		return true;
+	}
+
+	return false;
 }
 
 void Tokenizer::nextToken()

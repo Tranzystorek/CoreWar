@@ -11,7 +11,7 @@ class Assembler
 {
 	using uint = unsigned int;
 
-	using dictionary = std::unordered_map<std::string, uint>;
+	using dictionary = std::unordered_map<std::string, int>;
 
 public:
 
@@ -20,6 +20,8 @@ public:
 	void openFile(const char*);
 
 	void assembly();
+
+	const std::vector<VirtualMachine::Core::Instruction>& getInstructions();
 
 private:
 
@@ -32,9 +34,13 @@ private:
 
 	std::vector<std::string> readLabels();
 
-	std::vector<Instruction> readInstructions(std::vector<std::string>);
+	void readInstructions(const std::vector<std::string>&);
+
+	std::vector<Instruction> assembledInstructions_;
 
 	void resetFilePos();
+
+	unsigned int normalize(int, unsigned int);
 
 	bool assembled_;
 

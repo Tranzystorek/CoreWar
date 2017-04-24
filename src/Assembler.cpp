@@ -2,7 +2,9 @@
 
 #include "Tokenizer.hpp"
 
+#include <stdexcept>
 #include <algorithm>
+#include <string>
 #include <iostream>
 
 typedef VirtualMachine::Core::Instruction Instruction;
@@ -20,7 +22,11 @@ Assembler::Assembler()
 void Assembler::openFile(const char* fname)
 {
 	if(fin_.is_open())
+	{
 		fin_.close();
+
+		assembledInstructions_.clear();
+	}
 
 	try
 	{
@@ -44,13 +50,11 @@ void Assembler::assembly()
 	}
 
 	readInstructions(readLabels());
+}
 
-	//TODO
-
-	for(const auto &l : labels_)
-	{
-		std::cout << l.first << " " << l.second << std::endl;
-	}
+const std::vector<Instruction>& Assembler::getInstructions()
+{
+	return assembledInstructions_;
 }
 
 void Assembler::resetFilePos()
@@ -58,6 +62,19 @@ void Assembler::resetFilePos()
 	//WATCH OUT FOR CLOSED STREAM
 
 	fin_.seekg(0, fin_.beg);
+}
+
+unsigned int Assembler::normalize(int n, unsigned int coresize = 8000)
+{
+	//TODO EXCEPTION
+	if(!coresize)
+		throw;
+
+	if(n < 0)
+		return static_cast<unsigned int>(coresize - (-n) % coresize);
+
+	else
+		return static_cast<unsigned int>(n % coresize);
 }
 
 std::vector<std::string> Assembler::readLabels()
@@ -68,9 +85,9 @@ std::vector<std::string> Assembler::readLabels()
 	std::string fragment;
 	std::string newline;
 
-	Tokenizer t(std::string(), " \t", ";:.", true);
+	Tokenizer t(std::string(), " \t", ";:.,", true);
 
-	uint lno = 0;
+	int lno = 0;
 
 	std::vector<std::string> instructions;
 
@@ -157,49 +174,293 @@ std::vector<std::string> Assembler::readLabels()
 	return instructions;
 }
 
-std::vector<Instruction> Assembler::readInstructions(std::vector<std::string> v)
+void Assembler::readInstructions(const std::vector<std::string>& v)
 {
-	static std::string op[] = {"kil", "frk", "nop", "mov", "add", "sub", "mul", "div", "mod", "jmp"};
-	static std::string mod[] = {"a", "b", "ab", "ba", "f", "x", "i"};
-	static std::string address[] = {"#", "$", "@", "*"};
+	static std::vector<std::string> op = {"kil", "frk", "nop", "mov", "add", "sub", "mul", "div", "mod", "jmp"};
+	static std::vector<std::string> mod = {"a", "b", "ab", "ba", "f", "x", "i"};
+	static std::vector<std::string> address = {"#", "$", "*", "@"};
 
-	std::vector<Instruction> ret;
+	//std::vector<Instruction> ret;
 
 	Instruction ins;
 
 	Tokenizer t(std::string(), " ", "#$@*.,;", false);
 
-	const unsigned int vsize = tokens_.size();
+	const unsigned int vsize = v.size();
+
+	std::string token;
 
 	//analyze instructions
-	for(int i = 0; i < vsize; ++i)
+    for(unsigned int i = 0; i < vsize; ++i)
 	{
-		std::string::iterator it;
+		bool defaultMod = false;
+		std::vector<std::string>::iterator it;
 
 		t.assign(v[i]);
-
-		if(!t.isToken())
-		{
-			//TODO
-		}
 
 		it = std::find(op.begin(), op.end(), t.next());
 
 		if(it != op.end())
 		{
-			ins.op = it - op.begin();
+			ins.op = static_cast<Instruction::OpCode>(it - op.begin());
+		}
+
+		else
+		{
+			//ERROR
 		}
 
 		if(!t.isToken())
 		{
-			//TODO
+			//ERROR
 		}
 
-		if(t.next != ".")
+		if( (token = t.next()) != "." )
 		{
-			//TODO
+			defaultMod = true;
 		}
-	}
 
-	return ret;
+		else
+		{
+			if(!t.isToken())
+			{
+				//ERROR
+			}
+
+			it = std::find(mod.begin(), mod.end(), t.next());
+
+			if(it != mod.end())
+			{
+				ins.mod = static_cast<Instruction::Modifier>(it - mod.begin());
+			}
+
+			else
+			{
+				//ERROR
+			}
+		}
+
+		if(!t.isToken())
+		{
+			//ERROR
+		}
+
+		//analyze A-field
+		if(!defaultMod)
+			token = t.next();
+
+		it = std::find(address.begin(), address.end(), token);
+
+		if(it != address.end())
+		{
+			ins.aMode = static_cast<Instruction::AddressMode>(it - address.begin());
+
+			if(!t.isToken())
+			{
+				//ERROR
+			}
+
+			token = t.next();
+
+			size_t pos = 0;
+			int val;
+
+			try
+			{
+				val = std::stoi(token, &pos);
+			}
+			catch(std::invalid_argument& e)
+			{
+				//ERROR
+			}
+
+			if(pos == token.size())
+			{
+				ins.aVal = normalize(val);
+			}
+
+			else
+			{
+				//ERROR
+			}
+		}
+
+		else
+		{
+			ins.aMode = Instruction::AddressMode::DIR;
+
+			size_t pos = 0;
+			int val;
+
+			try
+			{
+				val = std::stoi(token, &pos);
+			}
+			catch(std::invalid_argument& e)
+			{
+				if(labels_.count(token))
+				{
+					ins.aVal = normalize(labels_[token] - i);
+				}
+
+				else
+				{
+					//ERROR
+				}
+			}
+
+			if(pos == token.size())
+			{
+				ins.aVal = normalize(val);
+			}
+
+			else
+			{
+				//ERROR
+			}
+		}
+
+		if(!t.isToken())
+		{
+			//ERROR
+		}
+
+		//look for a comma
+		token = t.next();
+
+		if(token != ",")
+		{
+			//ERROR
+		}
+
+		if(!t.isToken())
+		{
+			if(ins.op == Instruction::OpCode::FRK ||
+			   ins.op == Instruction::OpCode::JMP)
+			{
+				ins.bVal = 0;
+			}
+
+			//ERROR
+		}
+
+		//analyze B-field
+		token = t.next();
+
+		it = std::find(address.begin(), address.end(), token);
+
+		if(it != address.end())
+		{
+			ins.bMode = static_cast<Instruction::AddressMode>(it - address.begin());
+
+			if(!t.isToken())
+			{
+				//ERROR
+			}
+
+			token = t.next();
+
+			size_t pos = 0;
+			int val;
+
+			try
+			{
+				val = std::stoi(token, &pos);
+			}
+			catch(std::invalid_argument& e)
+			{
+				//ERROR
+			}
+
+			if(pos == token.size())
+			{
+				ins.bVal = normalize(val);
+			}
+
+			else
+			{
+				//ERROR
+			}
+		}
+
+		else
+		{
+			ins.bMode = Instruction::AddressMode::DIR;
+
+			size_t pos = 0;
+			int val;
+
+			try
+			{
+				val = std::stoi(token, &pos);
+			}
+			catch(std::invalid_argument& e)
+			{
+				if(labels_.count(token))
+				{
+					ins.bVal = normalize(labels_[token] - i);
+				}
+
+				else
+				{
+					//ERROR
+				}
+			}
+
+			if(pos == token.size())
+			{
+				ins.bVal = normalize(val);
+			}
+
+			else
+			{
+				//ERROR
+			}
+		}
+
+		if(defaultMod)
+		{
+			switch(ins.op)
+			{
+				case Instruction::OpCode::KIL:
+				case Instruction::OpCode::NOP:
+					ins.mod = Instruction::Modifier::F;
+					break;
+
+				case Instruction::OpCode::FRK:
+				case Instruction::OpCode::JMP:
+					ins.mod = Instruction::Modifier::B;
+					break;
+
+				case Instruction::OpCode::MOV:
+					if(ins.aMode == Instruction::AddressMode::IMM)
+						ins.mod = Instruction::Modifier::AB;
+					else if(ins.bMode == Instruction::AddressMode::IMM)
+						ins.mod = Instruction::Modifier::B;
+					else
+						ins.mod = Instruction::Modifier::I;
+					break;
+
+				case Instruction::OpCode::ADD:
+				case Instruction::OpCode::SUB:
+				case Instruction::OpCode::MUL:
+				case Instruction::OpCode::DIV:
+				case Instruction::OpCode::MOD:
+					if(ins.aMode == Instruction::AddressMode::IMM)
+						ins.mod = Instruction::Modifier::AB;
+					else if(ins.bMode == Instruction::AddressMode::IMM)
+						ins.mod = Instruction::Modifier::B;
+					else
+						ins.mod = Instruction::Modifier::F;
+					break;
+			}
+		}
+
+		if(t.isToken())
+		{
+			//ERROR
+		}
+
+		assembledInstructions_.push_back(ins);
+	}//for
 }

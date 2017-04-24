@@ -27,6 +27,8 @@ private:
 
 	void nextToken();
 
+	bool checkToken();
+
 	//boost::char_separator<char> sep_;
 
 	std::string text_;
