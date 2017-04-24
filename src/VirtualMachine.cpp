@@ -1,5 +1,6 @@
 #include "VirtualMachine.hpp"
 
+#include <iostream>
 #include <stdexcept>
 #include <cstddef>
 
@@ -11,7 +12,11 @@ typedef VirtualMachine::Core::Instruction::OpCode OpCode;
 typedef VirtualMachine::Core::Instruction::Modifier Modifier;
 typedef VirtualMachine::Core::Instruction::AddressMode AddressMode;
 
-VirtualMachine::VirtualMachine(unsigned int coresize) : core_(coresize)
+VirtualMachine::VirtualMachine(unsigned int coresize) : core_(coresize),
+														maxCycles_(100000),
+                                                        maxProcesses_(64),
+														loaded_p1_(false),
+														loaded_p2_(false)
 {
 
 }
@@ -20,6 +25,10 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 {
 	if(proc.empty())
 		throw std::runtime_error("Attempted to obtain process from an empty ProcessQueue");
+
+	static std::string op[] = {"KIL", "FRK", "NOP", "MOV", "ADD", "SUB", "MUL", "DIV", "MOD", "JMP"};
+	static std::string mod[] = {"A", "B", "AB", "BA", "F", "X", "I"};
+	static std::string address[] = {"#", "$", "*", "@"};
 
 	ProgramPtr p = proc.front();
 	proc.pop();
@@ -30,6 +39,10 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 	//instruction "registers"
 	Instruction current = *p;
 	Instruction src, dst;
+
+	std::cout << op[current.op] << "." << mod[current.mod] << "\t"
+			  << address[current.aMode] << current.aVal << "\t"
+			  << address[current.bMode] << current.bVal << std::endl;
 
 	//determine SRC instruction
 	switch(current.aMode)
@@ -93,7 +106,8 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 
 		case OpCode::FRK:
 			proc.push(++p);
-			proc.push(ps);
+            if(proc.size() < maxProcesses_)
+                proc.push(ps);
 			break;
 
 		case OpCode::NOP:
@@ -371,13 +385,70 @@ void VirtualMachine::executeInstruction(ProcessQueue& proc)
 	}
 }
 
-int VirtualMachine::convertValue(int v)
+void VirtualMachine::loadProgram(const std::vector<Instruction>& v, unsigned int offset, bool isP1)
 {
-	if(v < 0)
-		return core_.size_ - (-v) % core_.size_;
+	//TODO EXCEPTION
+	if(v.size() > core_.size_)
+		throw;
+
+	ProgramPtr p = core_.begin() + offset;
+
+	if(isP1)
+	{
+		//TODO EXCEPTION
+		if(loaded_p1_)
+			throw;
+
+		p1_.push(p);
+		loaded_p1_ = true;
+	}
 
 	else
-		return v % core_.size_;
+	{
+		//TODO EXCEPTION
+		if(loaded_p2_)
+			throw;
+
+		p2_.push(p);
+		loaded_p2_ = true;
+	}
+
+	//load instructions into core
+	for(const auto& ins : v)
+		*(p++) = ins;
+}
+
+void VirtualMachine::run()
+{
+	bool draw = true;
+
+	for(int i = 0; i < maxCycles_; ++i)
+	{
+		executeInstruction(p1_);
+
+		if(p1_.empty())
+		{
+            std::cout << "P2 wins!" << std::endl;
+
+			draw = false;
+
+			break;
+		}
+
+		executeInstruction(p2_);
+
+		if(p2_.empty())
+		{
+            std::cout << "P1 wins!" << std::endl;
+
+			draw = false;
+
+			break;
+		}
+	}//for
+
+	if(draw)
+        std::cout << "Draw." << std::endl;
 }
 
 Core::Core(unsigned int s) : size_(s)
@@ -385,17 +456,12 @@ Core::Core(unsigned int s) : size_(s)
 	if(!size_)
 		throw std::invalid_argument("Core size cannot be zero");
 
-	memory_ = new Instruction[size_]{};
+	memory_ = std::vector<Instruction>(size_, Instruction());
 }
 
-Core::~Core()
+ProgramPtr Core::begin()
 {
-	delete[] memory_;
-}
-
-ProgramPtr Core::begin() const
-{
-	return ProgramPtr(memory_, *this);
+	return ProgramPtr(memory_.begin(), *this);
 }
 
 unsigned int Core::getSize() const
@@ -405,18 +471,20 @@ unsigned int Core::getSize() const
 
 ProgramPtr& ProgramPtr::operator=(const ProgramPtr& other)
 {
-	ptr_ = other.ptr_;
+	it_ = other.it_;
 	ref_ = other.ref_;
+
+	return *this;
 }
 
 Instruction& ProgramPtr::operator*()
 {
-	return *ptr_;
+	return *it_;
 }
 
 Instruction* ProgramPtr::operator->()
 {
-	return ptr_;
+	return it_.operator->();
 }
 
 ProgramPtr ProgramPtr::operator+(unsigned int n)
@@ -430,22 +498,22 @@ ProgramPtr ProgramPtr::operator+(unsigned int n)
 
 ProgramPtr& ProgramPtr::operator+=(unsigned int n)
 {
-	std::ptrdiff_t d = ptr_ - ref_.memory_;
+	std::ptrdiff_t d = it_ - ref_.memory_.begin();
 
 	d = (d + n) % ref_.size_;
 
-	ptr_ = ref_.memory_ + d;
+	it_ = ref_.memory_.begin() + d;
 
 	return *this;
 }
 
 ProgramPtr& ProgramPtr::operator++()
 {
-	if(ptr_ == ref_.memory_ + ref_.size_ - 1)
-		ptr_ = ref_.memory_;
+	if(it_ == ref_.memory_.end() - 1)
+		it_ = ref_.memory_.begin();
 
 	else
-		++ptr_;
+		++it_;
 
 	return *this;
 }

@@ -1,6 +1,7 @@
 #ifndef VIRTUALMACHINE_HPP
 #define VIRTUALMACHINE_HPP
 
+#include <vector>
 #include <queue>
 
 class VirtualMachine
@@ -15,15 +16,14 @@ public:
 		struct Instruction;
 
 		Core(unsigned int);
-		~Core();
 
-		ProgramPtr begin() const;
+		ProgramPtr begin();
 
 		unsigned int getSize() const;
 
 	private:
 
-		Instruction* memory_;
+		std::vector<Instruction> memory_;
 
 		unsigned int size_;
 
@@ -36,18 +36,26 @@ private:
 
 public:
 
-	VirtualMachine(unsigned int);
+    VirtualMachine(unsigned int = 8000);
 
-	void executeInstruction(ProcessQueue&);
+	void loadProgram(const std::vector<Core::Instruction>&, unsigned int, bool = true);
+
+	void run();
 
 private:
 
-	int convertValue(int);
+	void executeInstruction(ProcessQueue&);
 
 	ProcessQueue p1_;
 	ProcessQueue p2_;
 
 	Core core_;
+
+	unsigned int maxCycles_;
+    unsigned int maxProcesses_;
+
+	bool loaded_p1_;
+	bool loaded_p2_;
 };
 
 //******************************************************************************
@@ -88,7 +96,7 @@ class VirtualMachine::Core::ProgramPtr
 {
 public:
 
-	explicit ProgramPtr(Core::Instruction* p, const Core& r) : ptr_(p),
+	explicit ProgramPtr(std::vector<Core::Instruction>::iterator i, const Core& r) : it_(i),
 															   ref_(const_cast<Core&>(r)) {}
 
 	ProgramPtr& operator=(const ProgramPtr&);
@@ -105,7 +113,7 @@ public:
 
 private:
 
-	Core::Instruction* ptr_;
+	std::vector<Core::Instruction>::iterator it_;
 
 	Core& ref_;
 };
