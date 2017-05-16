@@ -4,6 +4,9 @@
 #include <vector>
 #include <boost/tokenizer.hpp>
 
+/*!
+ * \brief The Tokenizer class
+ */
 class Tokenizer
 {
 public:
@@ -12,8 +15,8 @@ public:
 
 	Tokenizer(const std::string&,
 			  const char*,
-			  const char*,
-			  bool);
+			  const char* = "",
+			  bool = false);
 
 	void assign(const std::string&);
 

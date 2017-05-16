@@ -5,13 +5,13 @@
 
 Tokenizer::Tokenizer(const std::string& s,
 					 const char* dropped,
-					 const char* kept = "",
-					 bool lcase = false)
-					 : index_(0),
-					   dropped_(dropped),
-					   kept_(kept),
-					   forceLowercase_(lcase),
-					   processed_(false)
+					 const char* kept,
+					 bool lcase)
+	: index_(0),
+	  dropped_(dropped),
+	  kept_(kept),
+	  forceLowercase_(lcase),
+	  processed_(false)
 {
 	if(forceLowercase_)
 		text_ = toLCase(s);

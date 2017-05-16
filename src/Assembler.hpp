@@ -4,6 +4,7 @@
 #include "VirtualMachine.hpp"
 
 #include <unordered_map>
+#include <utility>
 
 #include <fstream>
 
@@ -19,9 +20,13 @@ public:
 
 	void openFile(const char*);
 
-	void assembly();
+	bool assembly();
 
 	const std::vector<VirtualMachine::Core::Instruction>& getInstructions();
+
+	void toFile(const char*);
+
+	bool isAssembled();
 
 private:
 
@@ -32,19 +37,22 @@ private:
 	Assembler(const Assembler&) = delete;
 	Assembler& operator=(const Assembler&) = delete;
 
-	std::vector<std::string> readLabels();
+	bool readLabels();
 
-	void readInstructions(const std::vector<std::string>&);
+	bool readInstructions();
 
+	std::vector<std::pair<uint, std::string>> instructionLines_;
 	std::vector<Instruction> assembledInstructions_;
 
-	void resetFilePos();
+	void compilationError(const std::string&, unsigned int);
 
-	unsigned int normalize(int, unsigned int);
+	unsigned int normalize(int, unsigned int = 8000);
 
 	bool assembled_;
 
 	std::ifstream fin_;
+
+	std::string fname_;
 
 	dictionary labels_;
 };

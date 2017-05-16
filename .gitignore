@@ -1,4 +1,7 @@
+# extensions
 *.txt
-*.pro
 *.pro.user
 *.o
+
+# specific files
+.qmake.stash

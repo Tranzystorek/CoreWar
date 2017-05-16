@@ -16,7 +16,7 @@ Assembler& Assembler::getInstance()
 	return inst;
 }
 
-Assembler::Assembler()
+Assembler::Assembler() : assembled_(false)
 {}
 
 void Assembler::openFile(const char* fname)
@@ -25,31 +25,39 @@ void Assembler::openFile(const char* fname)
 	{
 		fin_.close();
 
+		instructionLines_.clear();
 		assembledInstructions_.clear();
+
+		labels_.clear();
+
+		fname_.clear();
+
+		assembled_ = false;
 	}
 
 	try
 	{
 		fin_.open(fname);
-
-		labels_.clear();
 	}
 	catch(const std::ifstream::failure& e)
 	{
 		std::cerr << e.what() << std::endl;
+		return;
 	}
+
+	fname_.assign(fname);
 }
 
-void Assembler::assembly()
+bool Assembler::assembly()
 {
 	if(!fin_.is_open())
 	{
 		std::cerr << "No file is open" << std::endl;
 
-		return;
+		return false;
 	}
 
-	readInstructions(readLabels());
+	return assembled_ = readLabels() & readInstructions();
 }
 
 const std::vector<Instruction>& Assembler::getInstructions()
@@ -57,14 +65,33 @@ const std::vector<Instruction>& Assembler::getInstructions()
 	return assembledInstructions_;
 }
 
-void Assembler::resetFilePos()
+void Assembler::toFile(const char* fname)
 {
-	//WATCH OUT FOR CLOSED STREAM
+	//TODO EXCEPTION
+	if(!assembled_)
+		throw;
 
-	fin_.seekg(0, fin_.beg);
+	std::ofstream fout(fname, std::ofstream::out |
+					   std::ofstream::binary |
+					   std::ofstream::trunc);
+
+	for(auto& ins : assembledInstructions_)
+	{
+		fout.write(reinterpret_cast<const char*>(&ins.op), sizeof(Instruction::OpCode));
+		fout.write(reinterpret_cast<const char*>(&ins.mod), sizeof(Instruction::Modifier));
+		fout.write(reinterpret_cast<const char*>(&ins.aMode), sizeof(Instruction::AddressMode));
+		fout.write(reinterpret_cast<const char*>(&ins.bMode), sizeof(Instruction::AddressMode));
+		fout.write(reinterpret_cast<const char*>(&ins.aVal), sizeof(unsigned int));
+		fout.write(reinterpret_cast<const char*>(&ins.bVal), sizeof(unsigned int));
+	}
 }
 
-unsigned int Assembler::normalize(int n, unsigned int coresize = 8000)
+bool Assembler::isAssembled()
+{
+	return assembled_;
+}
+
+unsigned int Assembler::normalize(int n, unsigned int coresize)
 {
 	//TODO EXCEPTION
 	if(!coresize)
@@ -77,22 +104,25 @@ unsigned int Assembler::normalize(int n, unsigned int coresize = 8000)
 		return static_cast<unsigned int>(n % coresize);
 }
 
-std::vector<std::string> Assembler::readLabels()
+bool Assembler::readLabels()
 {
 	std::string line;
 	std::string label;
-
 	std::string fragment;
-	std::string newline;
 
-	Tokenizer t(std::string(), " \t", ";:.,", true);
+	Tokenizer t(std::string(), " \t", ";:", true);
 
-	int lno = 0;
+	int ino = 0;
+	unsigned int lno = 0;
 
-	std::vector<std::string> instructions;
+	bool success = true;
 
 	while( std::getline(fin_, line) )
 	{
+		std::string newline;
+
+		++lno;
+
 		t.assign(line);
 
 		if(!t.isToken())
@@ -105,25 +135,24 @@ std::vector<std::string> Assembler::readLabels()
 
 		if(!t.isToken())
 		{
-			instructions.push_back(line);
+			instructionLines_.push_back(std::make_pair(lno, line));
 
-			++lno;
+			++ino;
 			continue;
 		}
 
+		//second token == ':'
 		if((fragment = t.next()) == ":")
 		{
 			if(labels_.count(label))
 			{
-				//ERROR
-				std::cerr << "Label already present in file: " << label << std::endl;
+				compilationError("Label already present in file: \'" + label + "\'", lno);
 
-				throw;
-
-				//THROW EXCEPTION
+				success = false;
 			}
 
-			labels_[label] = lno;
+			else
+				labels_[label] = ino;
 
 			if(t.isToken())
 			{
@@ -131,7 +160,7 @@ std::vector<std::string> Assembler::readLabels()
 					continue;
 
 				else
-					newline += fragment;
+					newline = fragment + " ";
 
 				while(t.isToken())
 				{
@@ -141,9 +170,9 @@ std::vector<std::string> Assembler::readLabels()
 					newline += fragment + " ";
 				}
 
-				instructions.push_back(newline);
+				instructionLines_.push_back(std::make_pair(lno, newline));
 
-				++lno;
+				++ino;
 			}
 		}
 
@@ -165,58 +194,82 @@ std::vector<std::string> Assembler::readLabels()
 				}
 			}
 
-			instructions.push_back(newline);
+			instructionLines_.push_back(std::make_pair(lno, newline));
 
-			++lno;
+			++ino;
 		}
 	}//while
 
-	return instructions;
+	return success;
 }
 
-void Assembler::readInstructions(const std::vector<std::string>& v)
+bool Assembler::readInstructions()
 {
-	static std::vector<std::string> op = {"kil", "frk", "nop", "mov", "add", "sub", "mul", "div", "mod", "jmp"};
+	static std::vector<std::string> op = {"kil", "frk", "nop", "mov", "add",
+										  "sub", "mul", "div", "mod", "jmp",
+										  "jmz", "jmn", "beq", "bne", "blt"};
 	static std::vector<std::string> mod = {"a", "b", "ab", "ba", "f", "x", "i"};
 	static std::vector<std::string> address = {"#", "$", "*", "@"};
 
-	//std::vector<Instruction> ret;
+	bool success = true;
 
 	Instruction ins;
 
-	Tokenizer t(std::string(), " ", "#$@*.,;", false);
+	Tokenizer t(std::string(), " ", "#$@*.,", false);
 
-	const unsigned int vsize = v.size();
+	const unsigned int vsize = instructionLines_.size();
 
 	std::string token;
 
 	//analyze instructions
-    for(unsigned int i = 0; i < vsize; ++i)
+	for(unsigned int i = 0; i < vsize; ++i)
 	{
 		bool defaultMod = false;
 		std::vector<std::string>::iterator it;
 
-		t.assign(v[i]);
+		t.assign(instructionLines_[i].second);
 
 		it = std::find(op.begin(), op.end(), t.next());
 
 		if(it != op.end())
-		{
 			ins.op = static_cast<Instruction::OpCode>(it - op.begin());
-		}
 
 		else
 		{
-			//ERROR
+			compilationError("Invalid instruction", instructionLines_[i].first);
+
+			success = false;
+			continue;
 		}
 
 		if(!t.isToken())
 		{
-			//ERROR
+			compilationError("No instruction arguments specified", instructionLines_[i].first);
+
+			success = false;
+			continue;
 		}
 
 		if( (token = t.next()) != "." )
 		{
+			switch(ins.op)
+			{
+			case Instruction::OpCode::KIL:
+			case Instruction::OpCode::NOP:
+				ins.mod = Instruction::Modifier::F;
+				break;
+
+			case Instruction::OpCode::FRK:
+			case Instruction::OpCode::JMP:
+			case Instruction::OpCode::JMZ:
+			case Instruction::OpCode::JMN:
+				ins.mod = Instruction::Modifier::B;
+				break;
+
+			default:
+				break;
+			}
+
 			defaultMod = true;
 		}
 
@@ -224,25 +277,33 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 		{
 			if(!t.isToken())
 			{
-				//ERROR
+				compilationError("Expected instruction modifier after \'.\'", instructionLines_[i].first);
+
+				success = false;
+				continue;
 			}
 
 			it = std::find(mod.begin(), mod.end(), t.next());
 
 			if(it != mod.end())
-			{
 				ins.mod = static_cast<Instruction::Modifier>(it - mod.begin());
-			}
 
 			else
 			{
-				//ERROR
+				compilationError("Invalid instruction modifier", instructionLines_[i].first);
+
+				success = false;
+				continue;
 			}
 		}
 
-		if(!t.isToken())
+		if(!t.isToken() && ins.op != Instruction::OpCode::JMP &&
+				ins.op != Instruction::OpCode::FRK)
 		{
-			//ERROR
+			compilationError("Too few instruction arguments specified", instructionLines_[i].first);
+
+			success = false;
+			continue;
 		}
 
 		//analyze A-field
@@ -257,13 +318,17 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 
 			if(!t.isToken())
 			{
-				//ERROR
+				compilationError("Missing A-Value", instructionLines_[i].first);
+
+				success = false;
+				continue;
 			}
 
 			token = t.next();
 
 			size_t pos = 0;
 			int val;
+			bool label = false;
 
 			try
 			{
@@ -271,17 +336,41 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 			}
 			catch(std::invalid_argument& e)
 			{
-				//ERROR
+				if(labels_.count(token))
+				{
+					if(ins.aMode != Instruction::AddressMode::IMM)
+					{
+						ins.aVal = normalize(labels_[token] - i);
+						label = true;
+					}
+
+					else
+					{
+						compilationError("Label address cannot be immediate", instructionLines_[i].first);
+
+						success = false;
+						continue;
+					}
+				}
+
+				else
+				{
+					compilationError("Label \'" + token + "\' does not exist", instructionLines_[i].first);
+
+					success = false;
+					continue;
+				}
 			}
 
 			if(pos == token.size())
-			{
 				ins.aVal = normalize(val);
-			}
 
-			else
+			else if(!label)
 			{
-				//ERROR
+				compilationError("Invalid label", instructionLines_[i].first);
+
+				success = false;
+				continue;
 			}
 		}
 
@@ -291,6 +380,7 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 
 			size_t pos = 0;
 			int val;
+			bool label = false;
 
 			try
 			{
@@ -301,28 +391,42 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 				if(labels_.count(token))
 				{
 					ins.aVal = normalize(labels_[token] - i);
+					label = true;
 				}
 
 				else
 				{
-					//ERROR
+					compilationError("Label \'" + token + "\' does not exist", instructionLines_[i].first);
+
+					success = false;
+					continue;
 				}
 			}
 
 			if(pos == token.size())
-			{
 				ins.aVal = normalize(val);
-			}
 
-			else
+			else if(!label)
 			{
-				//ERROR
+				compilationError("Invalid label", instructionLines_[i].first);
+
+				success = false;
+				continue;
 			}
 		}
 
 		if(!t.isToken())
 		{
-			//ERROR
+			if(ins.op == Instruction::OpCode::FRK ||
+					ins.op == Instruction::OpCode::JMP)
+			{
+				ins.bMode = Instruction::AddressMode::IMM;
+				ins.bVal = 0;
+
+				assembledInstructions_.push_back(ins);
+
+				continue;
+			}
 		}
 
 		//look for a comma
@@ -330,18 +434,18 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 
 		if(token != ",")
 		{
-			//ERROR
+			compilationError("Expected \',\' before B-Value", instructionLines_[i].first);
+
+			success = false;
+			continue;
 		}
 
 		if(!t.isToken())
 		{
-			if(ins.op == Instruction::OpCode::FRK ||
-			   ins.op == Instruction::OpCode::JMP)
-			{
-				ins.bVal = 0;
-			}
+			compilationError("Wrong number of arguments", instructionLines_[i].first);
 
-			//ERROR
+			success = false;
+			continue;
 		}
 
 		//analyze B-field
@@ -355,13 +459,17 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 
 			if(!t.isToken())
 			{
-				//ERROR
+				compilationError("Missing B-Value", instructionLines_[i].first);
+
+				success = false;
+				continue;
 			}
 
 			token = t.next();
 
 			size_t pos = 0;
 			int val;
+			bool label = false;
 
 			try
 			{
@@ -369,7 +477,30 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 			}
 			catch(std::invalid_argument& e)
 			{
-				//ERROR
+				if(labels_.count(token))
+				{
+					if(ins.bMode != Instruction::AddressMode::IMM)
+					{
+						ins.bVal = normalize(labels_[token] - i);
+						label = true;
+					}
+
+					else
+					{
+						compilationError("Label address cannot be immediate", instructionLines_[i].first);
+
+						success = false;
+						continue;
+					}
+				}
+
+				else
+				{
+					compilationError("Label \'" + token + "\' does not exist", instructionLines_[i].first);
+
+					success = false;
+					continue;
+				}
 			}
 
 			if(pos == token.size())
@@ -377,9 +508,12 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 				ins.bVal = normalize(val);
 			}
 
-			else
+			else if(!label)
 			{
-				//ERROR
+				compilationError("Invalid label", instructionLines_[i].first);
+
+				success = false;
+				continue;
 			}
 		}
 
@@ -389,6 +523,7 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 
 			size_t pos = 0;
 			int val;
+			bool label = false;
 
 			try
 			{
@@ -399,22 +534,27 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 				if(labels_.count(token))
 				{
 					ins.bVal = normalize(labels_[token] - i);
+					label = true;
 				}
 
 				else
 				{
-					//ERROR
+					compilationError("Label \'" + token + "\' does not exist", instructionLines_[i].first);
+
+					success = false;
+					continue;
 				}
 			}
 
 			if(pos == token.size())
-			{
 				ins.bVal = normalize(val);
-			}
 
-			else
+			else if(!label)
 			{
-				//ERROR
+				compilationError("Invalid label", instructionLines_[i].first);
+
+				success = false;
+				continue;
 			}
 		}
 
@@ -422,45 +562,61 @@ void Assembler::readInstructions(const std::vector<std::string>& v)
 		{
 			switch(ins.op)
 			{
-				case Instruction::OpCode::KIL:
-				case Instruction::OpCode::NOP:
-					ins.mod = Instruction::Modifier::F;
-					break;
-
-				case Instruction::OpCode::FRK:
-				case Instruction::OpCode::JMP:
+			case Instruction::OpCode::MOV:
+			case Instruction::OpCode::BEQ:
+			case Instruction::OpCode::BNE:
+				if(ins.aMode == Instruction::AddressMode::IMM)
+					ins.mod = Instruction::Modifier::AB;
+				else if(ins.bMode == Instruction::AddressMode::IMM)
 					ins.mod = Instruction::Modifier::B;
-					break;
+				else
+					ins.mod = Instruction::Modifier::I;
+				break;
 
-				case Instruction::OpCode::MOV:
-					if(ins.aMode == Instruction::AddressMode::IMM)
-						ins.mod = Instruction::Modifier::AB;
-					else if(ins.bMode == Instruction::AddressMode::IMM)
-						ins.mod = Instruction::Modifier::B;
-					else
-						ins.mod = Instruction::Modifier::I;
-					break;
+			case Instruction::OpCode::ADD:
+			case Instruction::OpCode::SUB:
+			case Instruction::OpCode::MUL:
+			case Instruction::OpCode::DIV:
+			case Instruction::OpCode::MOD:
+				if(ins.aMode == Instruction::AddressMode::IMM)
+					ins.mod = Instruction::Modifier::AB;
+				else if(ins.bMode == Instruction::AddressMode::IMM)
+					ins.mod = Instruction::Modifier::B;
+				else
+					ins.mod = Instruction::Modifier::F;
+				break;
 
-				case Instruction::OpCode::ADD:
-				case Instruction::OpCode::SUB:
-				case Instruction::OpCode::MUL:
-				case Instruction::OpCode::DIV:
-				case Instruction::OpCode::MOD:
-					if(ins.aMode == Instruction::AddressMode::IMM)
-						ins.mod = Instruction::Modifier::AB;
-					else if(ins.bMode == Instruction::AddressMode::IMM)
-						ins.mod = Instruction::Modifier::B;
-					else
-						ins.mod = Instruction::Modifier::F;
-					break;
+			case Instruction::OpCode::BLT:
+				if(ins.aMode == Instruction::AddressMode::IMM)
+					ins.mod = Instruction::Modifier::AB;
+				else
+					ins.mod = Instruction::Modifier::B;
+				break;
+
+			default:
+				break;
 			}
 		}
 
 		if(t.isToken())
 		{
-			//ERROR
+			compilationError("Too many arguments", instructionLines_[i].first);
+
+			success = false;
+			continue;
 		}
 
-		assembledInstructions_.push_back(ins);
+		if(success)
+			assembledInstructions_.push_back(ins);
 	}//for
+
+	if(!success)
+		assembledInstructions_.clear();
+
+	return success;
+}
+
+void Assembler::compilationError(const std::string & err, unsigned int lnumber)
+{
+	std::cerr << fname_ << ':' << lnumber << ": " << err << std::endl;
 }
